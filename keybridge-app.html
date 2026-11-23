@@ -57,7 +57,7 @@
   .tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
         min-height:128px;background:var(--card);border:1px solid var(--line);border-radius:18px;
         color:var(--txt);box-shadow:none}
-  #viewHome{padding-bottom:46px}
+  #viewHome:not(.hidden){display:flex;flex-direction:column;min-height:calc(100dvh - 96px);padding-bottom:8px}
   .tile:active{border-color:var(--accent)}
   .tile .lbl{font-size:18px;font-weight:700;letter-spacing:.3px}
   .kbico{width:92px;height:58px}
@@ -103,11 +103,16 @@
   .sendbtn{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;margin-bottom:10px}
   .sendbtn .n{font-size:16px;font-weight:700}
   .sendbtn .v{font:12px ui-monospace,Menlo,Consolas,monospace;color:#06140a;opacity:.75;word-break:break-all}
+  .sendedit{display:flex;gap:8px;align-items:stretch;margin-bottom:10px}
+  .sendedit .sendbtn{margin-bottom:0;flex:1}
+  button.editq{flex:none;width:54px;background:#16221a;color:var(--txt);border:1px solid var(--line);
+               box-shadow:none;font-size:22px;font-weight:700;border-radius:12px}
+  button.editq:active{border-color:var(--accent)}
   .frow input[type=text]{flex:1}
   .frow button{flex:0 0 auto;width:auto;padding:12px 16px}
   .hint{color:var(--mut);font-size:13px;margin:2px 0 10px}
-  #ver{position:fixed;left:0;right:0;bottom:12px;text-align:center;color:var(--mut);font-size:12px;
-       font-family:ui-monospace,Menlo,Consolas,monospace;opacity:.7;pointer-events:none}
+  #ver{margin-top:auto;padding-top:24px;text-align:center;color:var(--mut);font-size:12px;
+       font-family:ui-monospace,Menlo,Consolas,monospace;opacity:.7}
 
   #cam{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:30}
   #vidwrap{position:relative;flex:1;min-height:0}
@@ -181,8 +186,8 @@
       </button>
     </div>
     <div class="bootrow">
-      <button class="tile" id="bootF9"><span class="lbl">F9</span></button>
-      <button class="tile" id="bootF10"><span class="lbl">F10</span></button>
+      <button class="tile" id="bootF9" disabled><span class="lbl">F9</span></button>
+      <button class="tile" id="bootF10" disabled><span class="lbl">F10</span></button>
     </div>
     <div id="ver"></div>
   </main>
@@ -200,7 +205,7 @@
     </div>
     <div class="card">
       <textarea id="txt" placeholder="Text eingeben…"></textarea>
-      <label class="chk"><input type="checkbox" id="enter" checked> Enter danach drücken</label>
+      <label class="chk"><input type="checkbox" id="enter"> Enter danach drücken</label>
       <label class="chk"><input type="checkbox" id="keep"> Text nach dem Senden behalten</label>
       <div class="row">
         <button class="ghost" id="btnPaste">Einfügen</button>
@@ -333,7 +338,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-23.2';
+const APP_VERSION='v2026-11-23.4';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -358,6 +363,9 @@ function setStatus(t,ok){
   $('head').classList.toggle('disconnected',!ok);
   $('head').classList.remove('expanded');
   $('btnSend').disabled=!ok;
+  $('bootF9').disabled=!ok;
+  $('bootF10').disabled=!ok;
+  if(!ok){ try{ bootRun=null; clearTimeout(bootTimer); updateBootBtns(); }catch(e){} }
 }
 async function connect(){
   try{
@@ -741,6 +749,20 @@ function sendBtn(name,val){
   b.onclick=()=>sendToEsp(val);
   return b;
 }
+// Sende-Button mit "?"-Knopf zum Ändern des Werts vor dem Senden (für Produktbezeichnung)
+function sendBtnEditable(name,val){
+  let cur=val;
+  const row=document.createElement('div'); row.className='sendedit';
+  const b=document.createElement('button'); b.className='sendbtn';
+  const render=()=>{ b.innerHTML='<span class="n">'+esc(name)+'</span><span class="v">'+esc(cur)+'</span>'; };
+  render();
+  b.onclick=()=>sendToEsp(cur);
+  const e=document.createElement('button'); e.className='editq'; e.textContent='?';
+  e.title='Produktbezeichnung ändern';
+  e.onclick=()=>{ const nv=prompt('Produktbezeichnung ändern:',cur); if(nv!==null){ cur=nv.trim(); render(); toast('Geändert'); } };
+  row.appendChild(b); row.appendChild(e);
+  return row;
+}
 function renderResult(p){
   const now=new Date();
   const top=$('resTop'); top.innerHTML='';
@@ -754,7 +776,9 @@ function renderResult(p){
   if(p.bid)  items.push(['Build ID',p.bid]);
   fbButtons(p.fb).forEach(f=>items.push(f));
   if(!items.length){ list.innerHTML='<small>Nichts erkannt – auf der PartSurfer-Seite wirklich alles markiert &amp; kopiert?</small>'; }
-  items.forEach(it=>list.appendChild(sendBtn(it[0],it[1])));
+  items.forEach(it=>list.appendChild(
+    it[0]==='Produktbezeichnung' ? sendBtnEditable(it[0],it[1]) : sendBtn(it[0],it[1])
+  ));
   show('Res');
 }
 $('btnAnalyse').onclick=async()=>{
@@ -828,6 +852,9 @@ $('btnTorch').onclick=toggleTorch;
 
 snChanged();
 refreshScansBtn();
+// "Enter danach drücken": letzte Einstellung merken (erstmalig aus)
+try{ const e=localStorage.getItem('kb_enter'); if(e!==null) $('enter').checked=(e==='1'); }catch(e){}
+$('enter').addEventListener('change',()=>{ try{ localStorage.setItem('kb_enter',$('enter').checked?'1':'0'); }catch(e){} });
 $('ver').textContent='Version '+APP_VERSION;
 if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 </script>
