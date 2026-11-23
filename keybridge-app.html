@@ -115,6 +115,16 @@
   button.editq{flex:none;width:54px;background:#16221a;color:var(--txt);border:1px solid var(--line);
                box-shadow:none;font-size:22px;font-weight:700;border-radius:12px}
   button.editq:active{border-color:var(--accent)}
+  /* ---- Auto-Taste Vollbild-Overlay ---- */
+  .boov{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:6px;background:rgba(2,8,4,.94);cursor:pointer}
+  .boov.hidden{display:none}
+  .boKey{font-size:58px;font-weight:800;letter-spacing:2px;color:var(--accent);
+         animation:boPulse var(--pulse,200ms) ease-in-out infinite}
+  @keyframes boPulse{0%,100%{opacity:.4;text-shadow:0 0 10px rgba(34,230,74,.25)}
+                     50%{opacity:1;text-shadow:0 0 36px rgba(34,230,74,.9)}}
+  .boCd{font-size:128px;line-height:1;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
+  .boHint{color:var(--mut);font-size:15px;margin-top:14px}
   .frow input[type=text]{flex:1}
   .frow button{flex:0 0 auto;width:auto;padding:12px 16px}
   .hint{color:var(--mut);font-size:13px;margin:2px 0 10px}
@@ -269,8 +279,8 @@
           <option value="76">Entf (Delete)</option>
         </select>
       </div>
-      <div class="arow"><label>Intervall (ms)</label><input id="repInt" type="number" value="300" min="50"></div>
-      <div class="arow"><label>Dauer (s)</label><input id="repDur" type="number" value="10" min="1"></div>
+      <div class="arow"><label>Intervall (ms)</label><input id="repInt" type="number" value="300" min="20"></div>
+      <div class="arow"><label>Dauer (s, max 20)</label><input id="repDur" type="number" value="10" min="1" max="20"></div>
       <div class="row" style="margin-top:12px">
         <button id="repStart" disabled>Start</button>
         <button class="ghost" id="repStop" disabled>Stop</button>
@@ -343,10 +353,17 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<!-- Auto-Taste Vollbild-Overlay -->
+<div id="boOv" class="boov hidden">
+  <div class="boKey" id="boKey">F9</div>
+  <div class="boCd" id="boCd">10</div>
+  <div class="boHint">Tippen zum Stoppen</div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-23.6';
+const APP_VERSION='v2026-11-24.2';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -370,12 +387,12 @@ function setStatus(t,ok){
   $('head').classList.toggle('connected',!!ok);
   $('head').classList.toggle('disconnected',!ok);
   $('head').classList.remove('expanded');
-  $('btnSend').disabled=!ok;
+  $('btnSend').disabled = !ok || !$('txt').value.trim();
   $('bootF9').disabled=!ok;
   $('bootF10').disabled=!ok;
   $('repStart').disabled=!ok;
   $('repStop').disabled=!ok;
-  if(!ok){ try{ bootReset(); }catch(e){} }
+  if(!ok){ try{ bootReset(); stopRep(false); }catch(e){} }
 }
 async function connect(){
   try{
@@ -417,13 +434,21 @@ async function send(){
   if($('enter').checked) t+='\n';
   await writeChunked(t);
   if(!$('keep').checked) $('txt').value='';   // Text verschwindet, außer "behalten" ist an
+  onTxtChange();
 }
 $('btnSend').onclick=send;
 $('btnPaste').onclick=async()=>{
   try{ const t=await navigator.clipboard.readText();
-    if(t){ $('txt').value=t; toast('Eingefügt'); } else toast('Zwischenspeicher leer'); }
+    if(t){ $('txt').value=t; onTxtChange(); toast('Eingefügt'); } else toast('Zwischenspeicher leer'); }
   catch(e){ toast('Einfügen nicht möglich – bitte erlauben'); }
 };
+// Textfeld: max. 10 Zeilen + Senden nur bei Text & Verbindung
+function onTxtChange(){
+  const l=$('txt').value.split('\n');
+  if(l.length>10){ $('txt').value=l.slice(0,10).join('\n'); toast('Max. 10 Zeilen'); }
+  $('btnSend').disabled = !rxChar || !$('txt').value.trim();
+}
+$('txt').addEventListener('input', onTxtChange);
 
 /* Sondertasten: Backspace/Pfeile/Tab/Esc als Tastenbefehl, Enter über Newline */
 async function sendKeyCmd(k){
@@ -433,19 +458,43 @@ async function sendKeyCmd(k){
 }
 document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>sendKeyCmd(b.dataset.k));
 
-/* Auto-Taste: ESP wiederholt eine Taste selbst (ein Kommando, nicht-blockierend) */
+/* Auto-Taste: ESP wiederholt eine Taste selbst (ein Kommando), mit Vollbild-Overlay */
+let repCd=null;
+function repKeyLabel(){
+  const o=$('repKey').options[$('repKey').selectedIndex];
+  return (o?o.textContent:'Taste').split('–')[0].trim();
+}
+function clampInt(withHint){
+  let v=parseInt($('repInt').value,10); if(isNaN(v)) v=300;
+  if(v<20){ v=20; if(withHint) toast('BIOS kann nicht schneller – mind. 20 ms'); }
+  $('repInt').value=v; return v;
+}
+function clampDur(withHint){
+  let v=parseInt($('repDur').value,10); if(isNaN(v)) v=10;
+  if(v>20){ v=20; if(withHint) toast('Max. 20 s'); }
+  if(v<1) v=1;
+  $('repDur').value=v; return v;
+}
+$('repInt').addEventListener('blur',()=>clampInt(true));   // erst beim Verlassen prüfen, nicht beim Tippen
+$('repDur').addEventListener('blur',()=>clampDur(true));
+function stopRep(sendStop){
+  if(sendStop && rxChar) rxChar.writeValue(new TextEncoder().encode('<<REPSTOP>>'));
+  clearInterval(repCd); $('boOv').classList.add('hidden');
+}
+$('boOv').onclick=()=>stopRep(true);                       // Tippen aufs Overlay = sofort stoppen
 $('repStart').onclick=()=>{
   if(!rxChar){ toast('ESP nicht verbunden'); return; }
   const k=parseInt($('repKey').value,10);
-  const iv=Math.max(50, parseInt($('repInt').value,10)||300);
-  const du=Math.max(1, parseInt($('repDur').value,10)||10)*1000;
-  rxChar.writeValue(new TextEncoder().encode('<<REP:'+k+','+iv+','+du+'>>'));
-  toast('Auto-Taste läuft ('+(du/1000)+'s)');
+  const iv=clampInt(true), duS=clampDur(true);
+  rxChar.writeValue(new TextEncoder().encode('<<REP:'+k+','+iv+','+(duS*1000)+'>>'));
+  clearInterval(repCd);
+  $('boKey').textContent=repKeyLabel();
+  $('boKey').style.setProperty('--pulse', iv+'ms');        // Puls synchron zum Anschlag-Tempo
+  let s=duS; $('boCd').textContent=s;
+  $('boOv').classList.remove('hidden');
+  repCd=setInterval(()=>{ s--; if(s<=0){ clearInterval(repCd); $('boOv').classList.add('hidden'); } else $('boCd').textContent=s; }, 1000);
 };
-$('repStop').onclick=()=>{
-  if(rxChar) rxChar.writeValue(new TextEncoder().encode('<<REPSTOP>>'));
-  toast('Auto-Taste gestoppt');
-};
+$('repStop').onclick=()=>stopRep(true);
 /* Auswahl merken */
 ['repKey','repInt','repDur'].forEach(id=>{
   try{ const v=localStorage.getItem('kb_'+id); if(v!==null) $(id).value=v; }catch(e){}
@@ -855,7 +904,6 @@ function bootKey(usage){
   let s=9; bootLabel(oppId, s);
   bootCd=setInterval(()=>{ s--; if(s<0){ clearInterval(bootCd); } else bootLabel(oppId,s); }, 1000);
   bootTimer=setTimeout(bootReset, 9000);
-  toast((usage===66?'F9':'F10')+' läuft (9s)');
 }
 $('bootF9').onclick=()=>bootKey(66);
 $('bootF10').onclick=()=>bootKey(67);
@@ -876,11 +924,6 @@ refreshScansBtn();
 // "Enter danach drücken": letzte Einstellung merken (erstmalig aus)
 try{ const e=localStorage.getItem('kb_enter'); if(e!==null) $('enter').checked=(e==='1'); }catch(e){}
 $('enter').addEventListener('change',()=>{ try{ localStorage.setItem('kb_enter',$('enter').checked?'1':'0'); }catch(e){} });
-// Max. 10 Zeilen im Textfeld (Zeichen pro Zeile egal)
-$('txt').addEventListener('input',()=>{
-  const l=$('txt').value.split('\n');
-  if(l.length>10){ $('txt').value=l.slice(0,10).join('\n'); toast('Max. 10 Zeilen'); }
-});
 $('ver').textContent='Version '+APP_VERSION;
 if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 </script>
