@@ -55,13 +55,14 @@
   /* ---- Kacheln Startbildschirm ---- */
   .tiles{display:flex;flex-direction:column;gap:14px;margin-top:6px}
   .tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-        min-height:150px;background:var(--card);border:1px solid var(--line);border-radius:18px;
+        min-height:128px;background:var(--card);border:1px solid var(--line);border-radius:18px;
         color:var(--txt);box-shadow:none}
+  #viewHome{padding-bottom:46px}
   .tile:active{border-color:var(--accent)}
   .tile .lbl{font-size:18px;font-weight:700;letter-spacing:.3px}
   .kbico{width:92px;height:58px}
   .bootrow{display:flex;gap:14px;margin-top:14px}
-  .bootrow .tile{flex:1;min-height:150px}
+  .bootrow .tile{flex:1;min-height:128px}
   .bootrow .lbl{font-size:30px;font-weight:800;letter-spacing:1px}
   .tile.on{border-color:var(--accent);box-shadow:0 0 18px rgba(34,230,74,.35);color:var(--accent)}
   .hpbadge{width:84px;height:84px;border-radius:50%;border:4px solid var(--hp);
@@ -332,7 +333,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-23.1';
+const APP_VERSION='v2026-11-23.2';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
