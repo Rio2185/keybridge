@@ -60,6 +60,10 @@
   .tile:active{border-color:var(--accent)}
   .tile .lbl{font-size:18px;font-weight:700;letter-spacing:.3px}
   .kbico{width:92px;height:58px}
+  .bootrow{display:flex;gap:14px;margin-top:14px}
+  .bootrow .tile{flex:1;min-height:150px}
+  .bootrow .lbl{font-size:30px;font-weight:800;letter-spacing:1px}
+  .tile.on{border-color:var(--accent);box-shadow:0 0 18px rgba(34,230,74,.35);color:var(--accent)}
   .hpbadge{width:84px;height:84px;border-radius:50%;border:4px solid var(--hp);
            display:flex;align-items:center;justify-content:center;
            font:800 30px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--hp);
@@ -130,6 +134,14 @@
   .dpad button{padding:0;font-size:18px}
   button.rst{width:auto;flex:none;padding:7px 12px;font-size:13px;background:#16221a;
              color:var(--txt);box-shadow:none;border:1px solid var(--line);margin-left:auto}
+
+  /* ---- Auto-Taste ---- */
+  .arow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+  .arow label{color:var(--mut);font-size:13px}
+  .arow input{width:110px;background:#0d140d;border:1px solid var(--line);color:var(--txt);
+              border-radius:8px;padding:8px;font-size:14px}
+  select.sel{width:100%;margin-top:6px;background:#0d140d;border:1px solid var(--line);color:var(--txt);
+             border-radius:8px;padding:10px;font-size:14px}
 </style>
 </head>
 <body>
@@ -166,6 +178,10 @@
         </span>
         <span class="lbl">Letzte Scans</span>
       </button>
+    </div>
+    <div class="bootrow">
+      <button class="tile" id="bootF9"><span class="lbl">F9</span></button>
+      <button class="tile" id="bootF10"><span class="lbl">F10</span></button>
     </div>
     <div id="ver"></div>
   </main>
@@ -218,6 +234,34 @@
         <input type="range" id="rGap" min="0" max="200" value="10"></div>
       <div class="slider"><label>Vorlauf (vor dem Tippen) <span id="vLead">0</span> ms</label>
         <input type="range" id="rLead" min="0" max="1000" step="50" value="0"></div>
+    </details>
+    <details class="card">
+      <summary>Auto-Taste (fürs Boot-Menü)</summary>
+      <div class="slider"><label>Taste</label>
+        <select id="repKey" class="sel">
+          <option value="66">F9 – HP Boot-Menü</option>
+          <option value="67">F10 – BIOS (HP)</option>
+          <option value="69">F12 – Boot/Netzwerk (Dell)</option>
+          <option value="59">F2 – BIOS (Dell)</option>
+          <option value="41">Esc – Startup-Menü</option>
+          <option value="58">F1</option>
+          <option value="60">F3</option>
+          <option value="61">F4</option>
+          <option value="62">F5</option>
+          <option value="63">F6</option>
+          <option value="64">F7</option>
+          <option value="65">F8</option>
+          <option value="68">F11</option>
+          <option value="76">Entf (Delete)</option>
+        </select>
+      </div>
+      <div class="arow"><label>Intervall (ms)</label><input id="repInt" type="number" value="300" min="50"></div>
+      <div class="arow"><label>Dauer (s)</label><input id="repDur" type="number" value="10" min="1"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="repStart">Start</button>
+        <button class="ghost" id="repStop">Stop</button>
+      </div>
+      <div class="hint">Erst „Start" drücken, dann den Rechner starten – der ESP hämmert die Taste in den Boot-Moment.</div>
     </details>
   </main>
 
@@ -288,7 +332,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-12.13';
+const APP_VERSION='v2026-11-23.1';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -369,6 +413,25 @@ async function sendKeyCmd(k){
   await rxChar.writeValue(new TextEncoder().encode('<<'+k+'>>'));
 }
 document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>sendKeyCmd(b.dataset.k));
+
+/* Auto-Taste: ESP wiederholt eine Taste selbst (ein Kommando, nicht-blockierend) */
+$('repStart').onclick=()=>{
+  if(!rxChar){ toast('ESP nicht verbunden'); return; }
+  const k=parseInt($('repKey').value,10);
+  const iv=Math.max(50, parseInt($('repInt').value,10)||300);
+  const du=Math.max(1, parseInt($('repDur').value,10)||10)*1000;
+  rxChar.writeValue(new TextEncoder().encode('<<REP:'+k+','+iv+','+du+'>>'));
+  toast('Auto-Taste läuft ('+(du/1000)+'s)');
+};
+$('repStop').onclick=()=>{
+  if(rxChar) rxChar.writeValue(new TextEncoder().encode('<<REPSTOP>>'));
+  toast('Auto-Taste gestoppt');
+};
+/* Auswahl merken */
+['repKey','repInt','repDur'].forEach(id=>{
+  try{ const v=localStorage.getItem('kb_'+id); if(v!==null) $(id).value=v; }catch(e){}
+  $(id).addEventListener('change',()=>{ try{ localStorage.setItem('kb_'+id,$(id).value); }catch(e){} });
+});
 
 function setLayout(l){
   layout=l;
@@ -578,32 +641,30 @@ function labelValue(lines, labels){
   return null;
 }
 function extractFB(lines){
-  // 1) PartSurfer-Format: ...DESC<n>  -> Wert gleiche Zeile (PC-Spalte) ODER Folgezeile (Handy)
-  // Strukturbasiert (keine Mindestlänge): FB-Teile dürfen auch kurz sein (z. B. DESC3)
-  const isVal=s=>/^[A-Za-z0-9.]+$/.test(s) && /[A-Za-z]/.test(s) && !/^\d+$/.test(s);
-  const firstVal=str=>{ for(const t of (str||'').split(/[\t :,;]+/)){ if(t&&isVal(t)) return t; } return ''; };   // Wert nach DESCn (QTY/leer überspringen)
-  const lastVal =line=>{ const t=(line||'').trim().split(/\s+/); for(let i=t.length-1;i>=0;i--){ if(isVal(t[i])&&t[i].length>=2) return t[i]; } return ''; }; // Wert am Zeilenende (nach "Part Description :")
-  const parts=[];
+  // 1) PartSurfer IMG_DESC1/2/3 -> JEDE Zeile komplett (alle 4er-Gruppen), dann aneinander.
+  //    Gruppe = 2-4 Zeichen alnum/Punkt mit mind. 1 Buchstaben (schließt QTY-Ziffer "1" aus).
+  const isGroup = t => /^[.A-Za-z0-9]{2,4}$/.test(t) && /[A-Za-z]/.test(t);
+  const allGroups = str => (str||'').trim().split(/\s+/).filter(isGroup).join('');
+  const byN={};
   for(let i=0;i<lines.length;i++){
-    const re=/DESC(\d)/gi; let m;
-    while((m=re.exec(lines[i]))){
-      const n=+m[1];
-      let val=firstVal(lines[i].slice(m.index+m[0].length));   // gleiche Zeile (PC-Spalte)
-      if(!val){                                                // sonst Folgezeile (Handy: "Part Description : Wert")
-        for(let j=i+1;j<lines.length && j<i+6;j++){
-          const c=(lines[j]||'').trim();
-          if(!c) continue;
-          if(/DESC\d/i.test(c)) break;                         // nächster Desc -> stop
-          const v=lastVal(c);
-          if(v){ val=v; break; }
-        }
-      }
-      if(val) parts.push([n, val]);
+    const m = lines[i].match(/DESC\s*(\d)/i);          // "Description" hat keine Ziffer -> kein Treffer
+    if(!m) continue;
+    const n=+m[1];
+    if(byN[n]) continue;
+    let val='';
+    // Handy-Format: Wert in der folgenden "Part Description :"-Zeile (GANZE Zeile, alle Gruppen)
+    for(let j=i;j<lines.length && j<i+6;j++){
+      const pd=(lines[j]||'').match(/Part Description\s*[:#]?\s*(.+)/i);
+      if(pd){ const g=allGroups(pd[1]); if(g){ val=g; break; } }
+      if(j>i && /DESC\s*\d/i.test(lines[j])) break;    // nächster DESC -> stop
     }
+    // PC-Format: Wert in derselben Zeile nach DESCn
+    if(!val) val=allGroups(lines[i].slice(m.index+m[0].length));
+    if(val) byN[n]=val;
   }
-  if(parts.length){
-    parts.sort((a,b)=>a[0]-b[0]);
-    const fb=parts.map(p=>p[1]).join('').replace(/\s+/g,'');
+  const keys=Object.keys(byN).sort((a,b)=>a-b);
+  if(keys.length){
+    const fb=keys.map(k=>byN[k]).join('');
     if(fb) return fb;
   }
   // 2) klassische "Feature Byte"-Beschriftung
@@ -634,6 +695,17 @@ function parsePartsurfer(txt){
   let pn=labelValue(lines,['Product Number','Produktnummer','Product No']);
   let name=labelValue(lines,['Product Name','Product Description','Produktbezeichnung','Description']);
   let bid=null; const mb=flat.match(/BID\s*=\s*([A-Za-z0-9#]+)/i); if(mb) bid=mb[1];  // #SABD#DABD mitnehmen
+  if(!bid){                                   // neueres Format: IMG_BUILDID -> "Part Description : <wert>"
+    for(let i=0;i<lines.length;i++){
+      if(/IMG[_ ]?BUILDID/i.test(lines[i])){
+        for(let j=i;j<lines.length && j<i+4;j++){
+          const pd=(lines[j]||'').match(/Part Description\s*[:#]?\s*([A-Za-z0-9#]+)/i);
+          if(pd && /\d/.test(pd[1])){ bid=pd[1]; break; }
+        }
+        if(bid) break;
+      }
+    }
+  }
   let fb=extractFB(lines);
   if(sn) sn=sn.split(/\s/)[0];
   if(pn) pn=pn.split(/\s/)[0];
@@ -720,6 +792,27 @@ function renderScans(){
   });
 }
 $('tileScans').onclick=()=>{ renderScans(); show('Scans'); };
+
+/* Boot-Tasten F9/F10 auf der Startseite: ~9s hämmern, nochmal drücken stoppt */
+let bootRun=null, bootTimer=null;
+function updateBootBtns(){
+  $('bootF9').classList.toggle('on', bootRun===66);
+  $('bootF10').classList.toggle('on', bootRun===67);
+}
+function bootKey(usage){
+  const enc=s=>new TextEncoder().encode(s);
+  if(!rxChar){ toast('ESP nicht verbunden'); return; }
+  if(bootRun===usage){                         // läuft schon -> stoppen
+    rxChar.writeValue(enc('<<REPSTOP>>'));
+    clearTimeout(bootTimer); bootRun=null; updateBootBtns(); toast('Gestoppt'); return;
+  }
+  rxChar.writeValue(enc('<<REP:'+usage+',200,9000>>'));   // (neu/umschalten) starten, 9s
+  clearTimeout(bootTimer); bootRun=usage; updateBootBtns();
+  toast((usage===66?'F9':'F10')+' läuft (9s)');
+  bootTimer=setTimeout(()=>{ bootRun=null; updateBootBtns(); }, 9000);
+}
+$('bootF9').onclick=()=>bootKey(66);
+$('bootF10').onclick=()=>bootKey(67);
 
 /* ---------- Reset im Ergebnis-Fenster: aktuellen Scan leeren, zurück zu HP ---------- */
 $('btnReset').onclick=()=>{
