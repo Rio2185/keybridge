@@ -220,8 +220,8 @@
       </button>
     </div>
     <div class="bootrow">
-      <button class="tile" id="bootF9" disabled><span class="lbl">F9</span></button>
-      <button class="tile" id="bootF10" disabled><span class="lbl">F10</span></button>
+      <button class="tile" id="bootF9"><span class="lbl">F9</span></button>
+      <button class="tile" id="bootF10"><span class="lbl">F10</span></button>
     </div>
     <div id="ver"></div>
   </main>
@@ -299,8 +299,8 @@
       <div class="arow"><label>Intervall (ms, max 2500)</label><input id="repInt" type="number" value="300" min="20" max="2500"></div>
       <div class="arow"><label>Dauer (s, max 20)</label><input id="repDur" type="number" value="10" min="1" max="20"></div>
       <div class="row" style="margin-top:12px">
-        <button id="repStart" disabled>Start</button>
-        <button class="ghost" id="repStop" disabled>Stop</button>
+        <button id="repStart">Start</button>
+        <button class="ghost" id="repStop">Stop</button>
       </div>
       <div class="hint">Erst „Start" drücken, dann den Rechner starten – der ESP hämmert die Taste in den Boot-Moment.</div>
     </details>
@@ -382,20 +382,24 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-24.6';
+const APP_VERSION='v2026-11-24.7';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1400); }
 
 /* ---------- "Läuft noch"-Pill unten (F9/F10 & Auto-Taste): pulsiert im Tempo, Tippen = Stopp ---------- */
-let pillCd=null, pillStop=null;
+let pillCd=null, pillStop=null, pillActive=false;
+function pillRender(){                                                  // sichtbar nur wenn aktiv UND nicht auf der Startseite
+  const onHome = !$('viewHome').classList.contains('hidden');
+  $('repPill').classList.toggle('hidden', !(pillActive && !onHome));
+}
 function pillShow(label, intervalMs, seconds, onStop){
-  pillStop=onStop;
+  pillStop=onStop; pillActive=true;
   $('repPillKey').textContent=label;
   $('repPillCd').textContent=seconds+'s';
   $('repPill').style.setProperty('--pulse', Math.max(120,intervalMs)+'ms');
-  $('repPill').classList.remove('hidden');
+  pillRender();
   clearInterval(pillCd);
   let s=seconds;
   pillCd=setInterval(()=>{
@@ -405,13 +409,14 @@ function pillShow(label, intervalMs, seconds, onStop){
     if(!$('boOv').classList.contains('hidden')) $('boCd').textContent=s; // Overlay-Zähler mitführen
   },1000);
 }
-function pillHide(){ clearInterval(pillCd); pillStop=null; $('repPill').classList.add('hidden'); $('boOv').classList.add('hidden'); }
+function pillHide(){ clearInterval(pillCd); pillStop=null; pillActive=false; $('repPill').classList.add('hidden'); $('boOv').classList.add('hidden'); }
 $('repPill').onclick=()=>{ const f=pillStop; pillHide(); if(f) f(); };
 
 /* ---------- Navigation ---------- */
 function show(v){
   ['Home','Kb','Hp','Res','Scans'].forEach(n=>$('view'+n).classList.toggle('hidden', n!==v));
   $('homeBtn').hidden = (v==='Home');
+  pillRender();                                   // Pill nur außerhalb der Startseite zeigen
 }
 $('tileKb').onclick=()=>show('Kb');
 $('tileHp').onclick=()=>show('Hp');
@@ -434,10 +439,8 @@ function setStatus(t,ok){
   $('head').classList.toggle('disconnected',!ok);
   $('head').classList.remove('expanded');
   $('btnSend').disabled = !ok || !$('txt').value.trim();
-  $('bootF9').disabled=!ok;
-  $('bootF10').disabled=!ok;
-  $('repStart').disabled=!ok;
-  $('repStop').disabled=!ok;
+  // F9/F10 & Start bleiben klickbar: der Guard im Handler blockt ohne Verbindung
+  // das Senden und zeigt stattdessen den grünen Pfeil zum Verbinden.
   if(!ok){ try{ bootReset(); stopRep(false); }catch(e){} }
 }
 async function connect(){
@@ -531,8 +534,10 @@ function stopRep(sendStop){
 $('boOv').onclick=()=>stopRep(true);                       // Tippen aufs Overlay = sofort stoppen
 $('repStart').onclick=()=>{
   if(!rxChar){ toast('ESP nicht verbunden'); pointConnect(); return; }
+  bootReset();                                                       // evtl. laufende F9/F10 beenden
   const k=parseInt($('repKey').value,10);
   const iv=clampInt(true), duS=clampDur(true);
+  rxChar.writeValue(new TextEncoder().encode('<<REPSTOP>>'));        // erster Befehl: sauber stoppen
   rxChar.writeValue(new TextEncoder().encode('<<REP:'+k+','+iv+','+(duS*1000)+'>>'));
   $('boKey').textContent=repKeyLabel();
   $('boKey').style.setProperty('--pulse', iv+'ms');        // Puls synchron zum Anschlag-Tempo
@@ -943,8 +948,9 @@ function bootReset(){
 function bootKey(usage){
   const enc=s=>new TextEncoder().encode(s);
   if(!rxChar){ toast('ESP nicht verbunden'); pointConnect(); return; }
-  if(bootRun===usage){ rxChar.writeValue(enc('<<REPSTOP>>')); bootReset(); toast('Gestoppt'); return; }
-  rxChar.writeValue(enc('<<REP:'+usage+',200,9000>>'));             // starten/umschalten, 9s
+  if(bootRun!==null){ rxChar.writeValue(enc('<<REPSTOP>>')); bootReset(); toast('Gestoppt'); return; } // läuft etwas -> erster Druck stoppt IMMER (auch die andere Taste)
+  rxChar.writeValue(enc('<<REPSTOP>>'));                            // erster Befehl: sauber stoppen
+  rxChar.writeValue(enc('<<REP:'+usage+',200,9000>>'));             // dann starten, 9s
   clearTimeout(bootTimer); clearInterval(bootCd);
   bootRun=usage; updateBootBtns();
   bootLabel(usage===66?'bootF9':'bootF10', usage===66?'F9':'F10'); // aktives Feld behält Beschriftung
