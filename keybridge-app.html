@@ -119,12 +119,17 @@
   .boov{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;
         gap:6px;background:rgba(2,8,4,.94);cursor:pointer}
   .boov.hidden{display:none}
-  .boKey{font-size:58px;font-weight:800;letter-spacing:2px;color:var(--accent);
+  .boKey{font-size:min(23vw,122px);line-height:1;font-weight:800;letter-spacing:2px;white-space:nowrap;color:var(--accent);
          animation:boPulse var(--pulse,200ms) ease-in-out infinite}
   @keyframes boPulse{0%,100%{opacity:.4;text-shadow:0 0 10px rgba(34,230,74,.25)}
                      50%{opacity:1;text-shadow:0 0 36px rgba(34,230,74,.9)}}
-  .boCd{font-size:128px;line-height:1;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
+  .boCd{font-size:min(19vw,104px);line-height:1;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
   .boHint{color:var(--mut);font-size:15px;margin-top:14px}
+  /* grüner Pfeil nach oben zum Verbinden-Button, wenn ohne Verbindung agiert wird */
+  .connarrow{position:fixed;top:54px;right:26px;z-index:70;color:var(--accent);font-size:42px;font-weight:800;
+             text-shadow:0 0 14px rgba(34,230,74,.85);pointer-events:none}
+  .connarrow.hidden{display:none}
+  @keyframes connup{0%{opacity:0;transform:translateY(16px)}30%{opacity:1}100%{opacity:0;transform:translateY(-12px)}}
   .frow input[type=text]{flex:1}
   .frow button{flex:0 0 auto;width:auto;padding:12px 16px}
   .hint{color:var(--mut);font-size:13px;margin:2px 0 10px}
@@ -142,6 +147,18 @@
          padding:9px 16px;border-radius:20px;font-size:14px;opacity:0;transition:opacity .2s;
          pointer-events:none;z-index:40}
   .toast.show{opacity:1}
+  /* ---- "Läuft noch"-Pill unten: pulsiert im Anschlag-Tempo, Tippen = Stopp ---- */
+  .repPill{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);z-index:55;
+           display:flex;align-items:center;gap:11px;cursor:pointer;
+           background:#132013;color:var(--txt);border:1px solid var(--accent);
+           padding:10px 15px 10px 17px;border-radius:24px;font-size:15px;
+           animation:pillPulse var(--pulse,200ms) ease-in-out infinite}
+  .repPill.hidden{display:none}
+  .repPill b{color:var(--accent);font-weight:800;letter-spacing:1px;font-size:19px}
+  .repPill .cd{font-variant-numeric:tabular-nums;font-weight:700;font-size:15px;min-width:26px;text-align:center}
+  .repPill .x{font-size:13px;color:var(--mut);border:1px solid var(--line);border-radius:50%;
+              width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex:none}
+  @keyframes pillPulse{0%,100%{box-shadow:0 0 6px rgba(34,230,74,.22)}50%{box-shadow:0 0 24px rgba(34,230,74,.85)}}
 
   /* ---- Sondertasten (Backspace / Pfeile / Enter / Tab / Esc) ---- */
   .speckeys{display:flex;gap:10px;margin-top:12px}
@@ -279,7 +296,7 @@
           <option value="76">Entf (Delete)</option>
         </select>
       </div>
-      <div class="arow"><label>Intervall (ms)</label><input id="repInt" type="number" value="300" min="20"></div>
+      <div class="arow"><label>Intervall (ms, max 2500)</label><input id="repInt" type="number" value="300" min="20" max="2500"></div>
       <div class="arow"><label>Dauer (s, max 20)</label><input id="repDur" type="number" value="10" min="1" max="20"></div>
       <div class="row" style="margin-top:12px">
         <button id="repStart" disabled>Start</button>
@@ -352,6 +369,7 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="repPill hidden" id="repPill"><b id="repPillKey">F9</b><span class="cd" id="repPillCd">9s</span><span class="x">✕</span></div>
 
 <!-- Auto-Taste Vollbild-Overlay -->
 <div id="boOv" class="boov hidden">
@@ -359,15 +377,36 @@
   <div class="boCd" id="boCd">10</div>
   <div class="boHint">Tippen zum Stoppen</div>
 </div>
+<div id="connArrow" class="connarrow hidden">↑</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-24.2';
+const APP_VERSION='v2026-11-24.6';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1400); }
+
+/* ---------- "Läuft noch"-Pill unten (F9/F10 & Auto-Taste): pulsiert im Tempo, Tippen = Stopp ---------- */
+let pillCd=null, pillStop=null;
+function pillShow(label, intervalMs, seconds, onStop){
+  pillStop=onStop;
+  $('repPillKey').textContent=label;
+  $('repPillCd').textContent=seconds+'s';
+  $('repPill').style.setProperty('--pulse', Math.max(120,intervalMs)+'ms');
+  $('repPill').classList.remove('hidden');
+  clearInterval(pillCd);
+  let s=seconds;
+  pillCd=setInterval(()=>{
+    s--;
+    if(s<=0){ pillHide(); return; }                                    // Dauer vorbei: ESP hört selbst auf, nur Anzeige weg
+    $('repPillCd').textContent=s+'s';
+    if(!$('boOv').classList.contains('hidden')) $('boCd').textContent=s; // Overlay-Zähler mitführen
+  },1000);
+}
+function pillHide(){ clearInterval(pillCd); pillStop=null; $('repPill').classList.add('hidden'); $('boOv').classList.add('hidden'); }
+$('repPill').onclick=()=>{ const f=pillStop; pillHide(); if(f) f(); };
 
 /* ---------- Navigation ---------- */
 function show(v){
@@ -382,6 +421,13 @@ $('homeBtn').onclick=()=>show('Home');
 const SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const RX ='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 let rxChar=null, dev=null;
+// Grüner Pfeil nach oben zum Verbinden-Button, wenn ohne Verbindung agiert wird
+function pointConnect(){
+  const a=$('connArrow'); if(!a) return;
+  a.classList.remove('hidden');
+  a.style.animation='none'; void a.offsetWidth; a.style.animation='connup .9s ease-out';
+  clearTimeout(a._t); a._t=setTimeout(()=>a.classList.add('hidden'), 850);
+}
 function setStatus(t,ok){
   $('st').textContent=t;
   $('head').classList.toggle('connected',!!ok);
@@ -452,7 +498,7 @@ $('txt').addEventListener('input', onTxtChange);
 
 /* Sondertasten: Backspace/Pfeile/Tab/Esc als Tastenbefehl, Enter über Newline */
 async function sendKeyCmd(k){
-  if(!rxChar){ toast('ESP nicht verbunden'); return; }
+  if(!rxChar){ toast('ESP nicht verbunden'); pointConnect(); return; }
   if(k==='ENTER'){ await writeChunked('\n'); return; }   // Enter = bestehender Weg
   await rxChar.writeValue(new TextEncoder().encode('<<'+k+'>>'));
 }
@@ -467,6 +513,7 @@ function repKeyLabel(){
 function clampInt(withHint){
   let v=parseInt($('repInt').value,10); if(isNaN(v)) v=300;
   if(v<20){ v=20; if(withHint) toast('BIOS kann nicht schneller – mind. 20 ms'); }
+  if(v>2500){ v=2500; if(withHint) toast('Max. 2500 ms'); }
   $('repInt').value=v; return v;
 }
 function clampDur(withHint){
@@ -479,20 +526,19 @@ $('repInt').addEventListener('blur',()=>clampInt(true));   // erst beim Verlasse
 $('repDur').addEventListener('blur',()=>clampDur(true));
 function stopRep(sendStop){
   if(sendStop && rxChar) rxChar.writeValue(new TextEncoder().encode('<<REPSTOP>>'));
-  clearInterval(repCd); $('boOv').classList.add('hidden');
+  pillHide();
 }
 $('boOv').onclick=()=>stopRep(true);                       // Tippen aufs Overlay = sofort stoppen
 $('repStart').onclick=()=>{
-  if(!rxChar){ toast('ESP nicht verbunden'); return; }
+  if(!rxChar){ toast('ESP nicht verbunden'); pointConnect(); return; }
   const k=parseInt($('repKey').value,10);
   const iv=clampInt(true), duS=clampDur(true);
   rxChar.writeValue(new TextEncoder().encode('<<REP:'+k+','+iv+','+(duS*1000)+'>>'));
-  clearInterval(repCd);
   $('boKey').textContent=repKeyLabel();
   $('boKey').style.setProperty('--pulse', iv+'ms');        // Puls synchron zum Anschlag-Tempo
-  let s=duS; $('boCd').textContent=s;
+  $('boCd').textContent=duS;
   $('boOv').classList.remove('hidden');
-  repCd=setInterval(()=>{ s--; if(s<=0){ clearInterval(repCd); $('boOv').classList.add('hidden'); } else $('boCd').textContent=s; }, 1000);
+  pillShow(repKeyLabel(), iv, duS, ()=>stopRep(true));      // unten weiterlaufende Anzeige (bleibt auch nach Wegwischen)
 };
 $('repStop').onclick=()=>stopRep(true);
 /* Auswahl merken */
@@ -559,6 +605,7 @@ function parseHp(raw){
   let sn=null,pn=null;
   for(const t of toks){ if(!sn&&/^[A-Za-z0-9]{10}$/.test(t)){ sn=t; break; } }
   for(const t of toks){ if(t===sn)continue; if(/#/.test(t)||/av$/i.test(t)){ pn=t; break; } }
+  if(!pn){ for(const t of toks){ if(t===sn)continue; if(/^[A-Za-z0-9]{4,8}-[A-Za-z0-9]{2,4}$/.test(t)){ pn=t; break; } } } // HP-Teilenr. mit Bindestrich, z.B. L83585-001
   if(!pn){ for(const t of toks){ if(t===sn)continue; if(/^[A-Za-z0-9]{6,8}$/.test(t)){ pn=t; break; } } }
   if(!sn&&toks[0]) sn=toks[0];
   const extra=toks.filter(t=>t&&t!==sn&&t!==pn);
@@ -792,7 +839,7 @@ function mmddyyyy(d){ return pad(d.getMonth()+1)+'/'+pad(d.getDate())+'/'+d.getF
 function hhmm(d){ return pad(d.getHours())+':'+pad(d.getMinutes()); }
 
 async function sendToEsp(val){
-  if(!rxChar){ toast('ESP nicht verbunden'); return; }
+  if(!rxChar){ toast('ESP nicht verbunden'); pointConnect(); return; }
   if(!val){ return; }
   await writeChunked(val);
   toast('Gesendet');
@@ -891,10 +938,11 @@ function updateBootBtns(){
 function bootReset(){
   clearTimeout(bootTimer); clearInterval(bootCd); bootRun=null;
   bootLabel('bootF9','F9'); bootLabel('bootF10','F10'); updateBootBtns();
+  pillHide();
 }
 function bootKey(usage){
   const enc=s=>new TextEncoder().encode(s);
-  if(!rxChar){ toast('ESP nicht verbunden'); return; }
+  if(!rxChar){ toast('ESP nicht verbunden'); pointConnect(); return; }
   if(bootRun===usage){ rxChar.writeValue(enc('<<REPSTOP>>')); bootReset(); toast('Gestoppt'); return; }
   rxChar.writeValue(enc('<<REP:'+usage+',200,9000>>'));             // starten/umschalten, 9s
   clearTimeout(bootTimer); clearInterval(bootCd);
@@ -904,6 +952,7 @@ function bootKey(usage){
   let s=9; bootLabel(oppId, s);
   bootCd=setInterval(()=>{ s--; if(s<0){ clearInterval(bootCd); } else bootLabel(oppId,s); }, 1000);
   bootTimer=setTimeout(bootReset, 9000);
+  pillShow(usage===66?'F9':'F10', 200, 9, ()=>{ rxChar.writeValue(enc('<<REPSTOP>>')); bootReset(); }); // unten sichtbar, auch in anderen Ansichten
 }
 $('bootF9').onclick=()=>bootKey(66);
 $('bootF10').onclick=()=>bootKey(67);
@@ -925,6 +974,15 @@ refreshScansBtn();
 try{ const e=localStorage.getItem('kb_enter'); if(e!==null) $('enter').checked=(e==='1'); }catch(e){}
 $('enter').addEventListener('change',()=>{ try{ localStorage.setItem('kb_enter',$('enter').checked?'1':'0'); }catch(e){} });
 $('ver').textContent='Version '+APP_VERSION;
+
+/* Zurück-Geste / Zurück-Taste: Kamera -> Overlay -> Startseite -> erst dann App schließen */
+try{ history.pushState(null,''); }catch(e){}
+window.addEventListener('popstate', ()=>{
+  if($('cam') && $('cam').style.display==='flex'){ stopScan(); history.pushState(null,''); return; }   // Kamera schließen
+  if(!$('boOv').classList.contains('hidden')){ $('boOv').classList.add('hidden'); history.pushState(null,''); return; }  // Overlay schließen, läuft unten als Pill weiter
+  if($('viewHome').classList.contains('hidden')){ show('Home'); history.pushState(null,''); return; }    // Unteransicht -> Start
+  history.back();                                                                                        // Start & nichts offen -> schließen
+});
 if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 </script>
 </body>
