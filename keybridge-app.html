@@ -117,14 +117,17 @@
   button.editq:active{border-color:var(--accent)}
   /* ---- Auto-Taste Vollbild-Overlay ---- */
   .boov{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;
-        gap:6px;background:rgba(2,8,4,.94);cursor:pointer}
+        gap:min(6vh,42px);background:rgba(2,8,4,.94);cursor:pointer}
   .boov.hidden{display:none}
-  .boKey{font-size:min(23vw,122px);line-height:1;font-weight:800;letter-spacing:2px;white-space:nowrap;color:var(--accent);
+  /* Fx als umrandete Kachel wie am Home-Screen, Glühen im Anschlag-Tempo */
+  .boKey{font-size:min(20vw,108px);line-height:1;font-weight:800;letter-spacing:2px;white-space:nowrap;color:var(--accent);
+         background:var(--card);border:2px solid var(--accent);border-radius:22px;
+         padding:min(4vw,24px) min(9vw,52px);
          animation:boPulse var(--pulse,200ms) ease-in-out infinite}
-  @keyframes boPulse{0%,100%{opacity:.4;text-shadow:0 0 10px rgba(34,230,74,.25)}
-                     50%{opacity:1;text-shadow:0 0 36px rgba(34,230,74,.9)}}
+  @keyframes boPulse{0%,100%{box-shadow:0 0 8px rgba(34,230,74,.22)}
+                     50%{box-shadow:0 0 42px rgba(34,230,74,.9)}}
   .boCd{font-size:min(19vw,104px);line-height:1;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
-  .boHint{color:var(--mut);font-size:15px;margin-top:14px}
+  .boHint{color:var(--mut);font-size:15px;margin-top:6px}
   /* grüner Pfeil nach oben zum Verbinden-Button, wenn ohne Verbindung agiert wird */
   .connarrow{position:fixed;z-index:70;color:var(--accent);font-size:40px;font-weight:800;line-height:1;
              text-shadow:0 0 16px rgba(34,230,74,.95);pointer-events:none;transform:translateX(-50%)}
@@ -382,7 +385,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-24.8';
+const APP_VERSION='v2026-11-24.9';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
