@@ -126,10 +126,10 @@
   .boCd{font-size:min(19vw,104px);line-height:1;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
   .boHint{color:var(--mut);font-size:15px;margin-top:14px}
   /* grüner Pfeil nach oben zum Verbinden-Button, wenn ohne Verbindung agiert wird */
-  .connarrow{position:fixed;top:54px;right:26px;z-index:70;color:var(--accent);font-size:42px;font-weight:800;
-             text-shadow:0 0 14px rgba(34,230,74,.85);pointer-events:none}
+  .connarrow{position:fixed;z-index:70;color:var(--accent);font-size:40px;font-weight:800;line-height:1;
+             text-shadow:0 0 16px rgba(34,230,74,.95);pointer-events:none;transform:translateX(-50%)}
   .connarrow.hidden{display:none}
-  @keyframes connup{0%{opacity:0;transform:translateY(16px)}30%{opacity:1}100%{opacity:0;transform:translateY(-12px)}}
+  @keyframes connup{0%{opacity:0;transform:translate(-50%,14px)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-14px)}}
   .frow input[type=text]{flex:1}
   .frow button{flex:0 0 auto;width:auto;padding:12px 16px}
   .hint{color:var(--mut);font-size:13px;margin:2px 0 10px}
@@ -382,7 +382,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-24.7';
+const APP_VERSION='v2026-11-24.8';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -429,16 +429,21 @@ let rxChar=null, dev=null;
 // Grüner Pfeil nach oben zum Verbinden-Button, wenn ohne Verbindung agiert wird
 function pointConnect(){
   const a=$('connArrow'); if(!a) return;
+  // sichtbaren Verbinden-Knopf finden und Pfeil mittig DARUNTER setzen (zeigt nach oben)
+  const btn=[...document.querySelectorAll('#head .conn')].find(b=>b.offsetParent!==null) || $('btnConn');
+  const r=btn.getBoundingClientRect();
+  a.style.left=(r.left+r.width/2)+'px';
+  a.style.top =(r.bottom+6)+'px';
   a.classList.remove('hidden');
-  a.style.animation='none'; void a.offsetWidth; a.style.animation='connup .9s ease-out';
-  clearTimeout(a._t); a._t=setTimeout(()=>a.classList.add('hidden'), 850);
+  a.style.animation='none'; void a.offsetWidth; a.style.animation='connup 1.4s ease-out';
+  clearTimeout(a._t); a._t=setTimeout(()=>a.classList.add('hidden'), 1400);
 }
 function setStatus(t,ok){
   $('st').textContent=t;
   $('head').classList.toggle('connected',!!ok);
   $('head').classList.toggle('disconnected',!ok);
   $('head').classList.remove('expanded');
-  $('btnSend').disabled = !ok || !$('txt').value.trim();
+  $('btnSend').disabled = !$('txt').value.trim();   // nur bei leerem Text ausgegraut; Verbindung prüft der Handler
   // F9/F10 & Start bleiben klickbar: der Guard im Handler blockt ohne Verbindung
   // das Senden und zeigt stattdessen den grünen Pfeil zum Verbinden.
   if(!ok){ try{ bootReset(); stopRep(false); }catch(e){} }
@@ -479,6 +484,7 @@ async function sendTiming(){
   await rxChar.writeValue(new TextEncoder().encode('<<T:'+ (+$('rHold').value) +','+ (+$('rGap').value) +','+ (+$('rLead').value) +'>>'));
 }
 async function send(){
+  if(!rxChar){ toast('ESP nicht verbunden'); pointConnect(); return; }   // ohne Verbindung: Pfeil statt senden
   let t=$('txt').value;
   if($('enter').checked) t+='\n';
   await writeChunked(t);
@@ -491,11 +497,11 @@ $('btnPaste').onclick=async()=>{
     if(t){ $('txt').value=t; onTxtChange(); toast('Eingefügt'); } else toast('Zwischenspeicher leer'); }
   catch(e){ toast('Einfügen nicht möglich – bitte erlauben'); }
 };
-// Textfeld: max. 10 Zeilen + Senden nur bei Text & Verbindung
+// Textfeld: max. 10 Zeilen + Senden klickbar sobald Text da ist (Verbindung prüft der Handler -> Pfeil)
 function onTxtChange(){
   const l=$('txt').value.split('\n');
   if(l.length>10){ $('txt').value=l.slice(0,10).join('\n'); toast('Max. 10 Zeilen'); }
-  $('btnSend').disabled = !rxChar || !$('txt').value.trim();
+  $('btnSend').disabled = !$('txt').value.trim();
 }
 $('txt').addEventListener('input', onTxtChange);
 
