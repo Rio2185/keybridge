@@ -385,7 +385,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-24.9';
+const APP_VERSION='v2026-11-24.10';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -775,8 +775,9 @@ function labelValue(lines, labels){
 function extractFB(lines){
   // 1) PartSurfer IMG_DESC1/2/3 -> JEDE Zeile komplett (alle 4er-Gruppen), dann aneinander.
   //    Gruppe = 2-4 Zeichen alnum/Punkt mit mind. 1 Buchstaben (schließt QTY-Ziffer "1" aus).
-  const isGroup = t => /^[.A-Za-z0-9]{2,4}$/.test(t) && /[A-Za-z]/.test(t);
-  const allGroups = str => (str||'').trim().split(/\s+/).filter(isGroup).join('');
+  // Wert einer DESC-Zeile = Feature-Byte-Fragment: nur Leerzeichen raus, alnum + Punkt behalten.
+  // Funktioniert für durchgehende Strings ("476J6S...bhcA") UND für 4er-Gruppen ("3E47 6J6S ...").
+  const cleanVal = str => (str||'').replace(/\s+/g,'').replace(/[^A-Za-z0-9.]/g,'');
   const byN={};
   for(let i=0;i<lines.length;i++){
     const m = lines[i].match(/DESC\s*(\d)/i);          // "Description" hat keine Ziffer -> kein Treffer
@@ -784,14 +785,14 @@ function extractFB(lines){
     const n=+m[1];
     if(byN[n]) continue;
     let val='';
-    // Handy-Format: Wert in der folgenden "Part Description :"-Zeile (GANZE Zeile, alle Gruppen)
+    // Handy-Format: Wert in der folgenden "Part Description :"-Zeile
     for(let j=i;j<lines.length && j<i+6;j++){
       const pd=(lines[j]||'').match(/Part Description\s*[:#]?\s*(.+)/i);
-      if(pd){ const g=allGroups(pd[1]); if(g){ val=g; break; } }
+      if(pd){ const g=cleanVal(pd[1]); if(g.length>=6){ val=g; break; } }
       if(j>i && /DESC\s*\d/i.test(lines[j])) break;    // nächster DESC -> stop
     }
     // PC-Format: Wert in derselben Zeile nach DESCn
-    if(!val) val=allGroups(lines[i].slice(m.index+m[0].length));
+    if(!val){ const g=cleanVal(lines[i].slice(m.index+m[0].length)); if(g.length>=6) val=g; }
     if(val) byN[n]=val;
   }
   const keys=Object.keys(byN).sort((a,b)=>a-b);
