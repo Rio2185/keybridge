@@ -385,7 +385,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-24.10';
+const APP_VERSION='v2026-11-24.11';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -788,11 +788,11 @@ function extractFB(lines){
     // Handy-Format: Wert in der folgenden "Part Description :"-Zeile
     for(let j=i;j<lines.length && j<i+6;j++){
       const pd=(lines[j]||'').match(/Part Description\s*[:#]?\s*(.+)/i);
-      if(pd){ const g=cleanVal(pd[1]); if(g.length>=6){ val=g; break; } }
+      if(pd){ const g=cleanVal(pd[1]); if(g.length>=6 || /^\./.test(g)){ val=g; break; } }  // kurzer Schlussteil wie ".A3" erlaubt (beginnt mit Punkt); "-N/A-"->"NA" nicht
       if(j>i && /DESC\s*\d/i.test(lines[j])) break;    // nächster DESC -> stop
     }
     // PC-Format: Wert in derselben Zeile nach DESCn
-    if(!val){ const g=cleanVal(lines[i].slice(m.index+m[0].length)); if(g.length>=6) val=g; }
+    if(!val){ const g=cleanVal(lines[i].slice(m.index+m[0].length)); if(g.length>=6 || /^\./.test(g)) val=g; }
     if(val) byN[n]=val;
   }
   const keys=Object.keys(byN).sort((a,b)=>a-b);
