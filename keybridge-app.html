@@ -133,6 +133,11 @@
              text-shadow:0 0 16px rgba(34,230,74,.95);pointer-events:none;transform:translateX(-50%)}
   .connarrow.hidden{display:none}
   @keyframes connup{0%{opacity:0;transform:translate(-50%,14px)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-14px)}}
+  /* Zieh-zum-Aktualisieren (im installierten PWA-Modus, wo die Browsergeste fehlt) */
+  #ptr{position:fixed;left:50%;top:0;transform:translate(-50%,-48px);z-index:65;
+       background:#132013;border:1px solid var(--accent);border-top:none;color:var(--accent);
+       padding:8px 16px;border-radius:0 0 16px 16px;font-size:14px;font-weight:700;
+       white-space:nowrap;pointer-events:none}
   .frow input[type=text]{flex:1}
   .frow button{flex:0 0 auto;width:auto;padding:12px 16px}
   .hint{color:var(--mut);font-size:13px;margin:2px 0 10px}
@@ -188,6 +193,7 @@
 </style>
 </head>
 <body>
+<div id="ptr">↓ Zum Aktualisieren ziehen</div>
 
 <header id="head" class="disconnected">
   <button class="back" id="homeBtn" hidden>‹</button>
@@ -266,19 +272,6 @@
       </div>
     </div>
     <details class="card">
-      <summary>Tempo (für BIOS / Branding)</summary>
-      <div class="seg" style="margin-top:12px">
-        <button id="spFast" class="on">Normal</button>
-        <button id="spSlow">BIOS (langsam)</button>
-      </div>
-      <div class="slider"><label>Halten (Tastendruck) <span id="vHold">6</span> ms</label>
-        <input type="range" id="rHold" min="1" max="120" value="6"></div>
-      <div class="slider"><label>Pause (zwischen Zeichen) <span id="vGap">10</span> ms</label>
-        <input type="range" id="rGap" min="0" max="200" value="10"></div>
-      <div class="slider"><label>Vorlauf (vor dem Tippen) <span id="vLead">0</span> ms</label>
-        <input type="range" id="rLead" min="0" max="1000" step="50" value="0"></div>
-    </details>
-    <details class="card">
       <summary>Auto-Taste (fürs Boot-Menü)</summary>
       <div class="slider"><label>Taste</label>
         <select id="repKey" class="sel">
@@ -306,6 +299,19 @@
         <button class="ghost" id="repStop">Stop</button>
       </div>
       <div class="hint">Erst „Start" drücken, dann den Rechner starten – der ESP hämmert die Taste in den Boot-Moment.</div>
+    </details>
+    <details class="card">
+      <summary>Tempo (für BIOS / Branding)</summary>
+      <div class="seg" style="margin-top:12px">
+        <button id="spFast" class="on">Normal</button>
+        <button id="spSlow">BIOS (langsam)</button>
+      </div>
+      <div class="slider"><label>Halten (Tastendruck) <span id="vHold">6</span> ms</label>
+        <input type="range" id="rHold" min="1" max="120" value="6"></div>
+      <div class="slider"><label>Pause (zwischen Zeichen) <span id="vGap">10</span> ms</label>
+        <input type="range" id="rGap" min="0" max="200" value="10"></div>
+      <div class="slider"><label>Vorlauf (vor dem Tippen) <span id="vLead">0</span> ms</label>
+        <input type="range" id="rLead" min="0" max="1000" step="50" value="0"></div>
     </details>
   </main>
 
@@ -385,7 +391,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-24.11';
+const APP_VERSION='v2026-11-26.2';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -990,6 +996,40 @@ refreshScansBtn();
 try{ const e=localStorage.getItem('kb_enter'); if(e!==null) $('enter').checked=(e==='1'); }catch(e){}
 $('enter').addEventListener('change',()=>{ try{ localStorage.setItem('kb_enter',$('enter').checked?'1':'0'); }catch(e){} });
 $('ver').textContent='Version '+APP_VERSION;
+// Versionsnummer antippen = neu laden (verlässlicher Fallback zum Ziehen)
+$('ver').style.cursor='pointer'; $('ver').title='Tippen zum Aktualisieren';
+$('ver').onclick=()=>location.reload();
+
+/* Zieh-zum-Aktualisieren: im PWA-Modus fehlt die native Browsergeste, daher selbst gebaut */
+(function(){
+  const ptr=$('ptr'), TH=70;
+  let startY=0, armed=false, pulling=false, dist=0;
+  const scroller=()=>document.querySelector('.view:not(.hidden)')||document.scrollingElement;
+  const blocked=()=>(!$('boOv').classList.contains('hidden')) || ($('cam') && $('cam').style.display==='flex');
+  const reset=()=>{ ptr.style.transform='translate(-50%,-48px)'; };
+  addEventListener('touchstart',e=>{
+    if(e.touches.length!==1 || blocked() || (e.target.closest && e.target.closest('textarea,input,select'))){ armed=false; return; }
+    const sc=scroller(); armed = !!sc && sc.scrollTop<=0;
+    startY=e.touches[0].clientY; dist=0; pulling=false;
+  },{passive:true});
+  addEventListener('touchmove',e=>{
+    if(!armed) return;
+    dist=e.touches[0].clientY-startY;
+    if(dist<=0){ return; }
+    const sc=scroller();
+    if(sc && sc.scrollTop>0){ armed=false; pulling=false; reset(); return; }
+    pulling=true;
+    const pull=Math.min(dist*0.5,76);
+    ptr.style.transform='translate(-50%,'+(pull-48)+'px)';
+    ptr.textContent = dist>TH ? '↻ Loslassen zum Aktualisieren' : '↓ Zum Aktualisieren ziehen';
+    if(dist>6 && e.cancelable) e.preventDefault();      // Überscrollen während des Ziehens unterdrücken
+  },{passive:false});
+  addEventListener('touchend',()=>{
+    if(pulling && dist>TH){ ptr.textContent='↻ Aktualisiere…'; ptr.style.transform='translate(-50%,10px)'; location.reload(); }
+    else reset();
+    armed=false; pulling=false; dist=0;
+  },{passive:true});
+})();
 
 /* Zurück-Geste / Zurück-Taste: Kamera -> Overlay -> Startseite -> erst dann App schließen */
 try{ history.pushState(null,''); }catch(e){}
