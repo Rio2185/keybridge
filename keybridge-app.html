@@ -391,7 +391,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const APP_VERSION='v2026-11-26.3';
+const APP_VERSION='v2026-11-26.4';
 const $=id=>document.getElementById(id);
 let toastT=null;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
@@ -422,14 +422,22 @@ function pillHide(){ clearInterval(pillCd); pillStop=null; pillActive=false; $('
 $('repPill').onclick=()=>{ const f=pillStop; pillHide(); if(f) f(); };
 
 /* ---------- Navigation ---------- */
-function show(v){
+let navHist=[];
+const curView=()=>{ const el=document.querySelector('.view:not(.hidden)'); return el?el.id.replace('view',''):'Home'; };
+function show(v, isBack){
+  const cur=curView();
+  if(!isBack){
+    if(v==='Home') navHist=[];                    // Startseite = Wurzel
+    else if(cur!==v) navHist.push(cur);           // Vorwärts: Herkunft merken
+  }
   ['Home','Kb','Hp','Res','Scans'].forEach(n=>$('view'+n).classList.toggle('hidden', n!==v));
   $('homeBtn').hidden = (v==='Home');
   pillRender();                                   // Pill nur außerhalb der Startseite zeigen
 }
+function goBack(){ show(navHist.pop()||'Home', true); }   // nur EINE Ebene zurück
 $('tileKb').onclick=()=>show('Kb');
 $('tileHp').onclick=()=>show('Hp');
-$('homeBtn').onclick=()=>show('Home');
+$('homeBtn').onclick=()=>goBack();
 
 /* ---------- ESP / BLE ---------- */
 const SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -983,7 +991,7 @@ $('bootF10').onclick=()=>bootKey(67);
 $('btnReset').onclick=()=>{
   $('snInput').value=''; $('hpExtra').innerHTML='';
   snChanged();
-  toast('Scan zurückgesetzt'); show('Hp');
+  toast('Scan zurückgesetzt'); navHist=['Home']; show('Hp', true);   // frischer Scan -> zurück führt zur Startseite
 };
 
 $('btnHpScan').onclick=()=>startScan('hp');
@@ -1000,14 +1008,14 @@ $('ver').textContent='Version '+APP_VERSION;
 $('ver').style.cursor='pointer'; $('ver').title='Tippen zum Aktualisieren';
 $('ver').onclick=()=>location.reload();
 // Zurück-Knöpfe in den Ansichten -> zur Startseite
-document.querySelectorAll('[data-home]').forEach(b=>b.onclick=()=>show('Home'));
+document.querySelectorAll('[data-home]').forEach(b=>b.onclick=()=>goBack());
 
 /* Zurück-Geste / Zurück-Taste: Kamera -> Overlay -> Startseite -> erst dann App schließen */
 try{ history.pushState(null,''); }catch(e){}
 window.addEventListener('popstate', ()=>{
   if($('cam') && $('cam').style.display==='flex'){ stopScan(); history.pushState(null,''); return; }   // Kamera schließen
   if(!$('boOv').classList.contains('hidden')){ $('boOv').classList.add('hidden'); history.pushState(null,''); return; }  // Overlay schließen, läuft unten als Pill weiter
-  if($('viewHome').classList.contains('hidden')){ show('Home'); history.pushState(null,''); return; }    // Unteransicht -> Start
+  if($('viewHome').classList.contains('hidden')){ goBack(); history.pushState(null,''); return; }    // Unteransicht -> eine Ebene zurück
   history.back();                                                                                        // Start & nichts offen -> schließen
 });
 if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
